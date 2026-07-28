@@ -1,0 +1,37 @@
+[package]
+name = "no-hard-feelings"
+version = "0.1.0"
+edition = "2021"
+description = "kLend liquidation bot"
+
+[[bin]]
+name = "nhf"
+path = "src/main.rs"
+
+[dependencies]
+klend-interface = { version = "0.6.0", features = ["solana-account"] }
+solana-pubkey = "2.1"
+solana-instruction = "2.1"
+solana-sdk = "~2.3"
+solana-client = "~2.3"
+solana-account = "2.1"
+solana-account-decoder-client-types = "~2.3"
+spl-token = "7"
+spl-associated-token-account = "6"
+bytemuck = "1.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+reqwest = { version = "~0.12.15", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = "1"
+base64 = "0.22"
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+dotenvy = "0.15"
+tokio = { version = "1", features = ["full"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+overflow-checks = true

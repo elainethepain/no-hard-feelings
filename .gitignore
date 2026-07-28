@@ -1,0 +1,3 @@
+/target
+.env
+scan_results.json
