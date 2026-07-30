@@ -1149,6 +1149,7 @@ async fn execute_liquidation(
 }
 
 /// Try executing opportunities in order. Returns true if one succeeds.
+#[allow(clippy::too_many_arguments)]
 async fn try_opportunities(
     bot: &BotConfig,
     data: &client::MarketData,

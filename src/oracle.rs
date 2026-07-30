@@ -78,9 +78,9 @@ impl OraclePrices {
             return None;
         }
         let mut prices = [DatedPrice::default(); MAX_ENTRIES];
-        for i in 0..MAX_ENTRIES {
+        for (i, price) in prices.iter_mut().enumerate() {
             let offset = i * entry_size;
-            prices[i] = *bytemuck::from_bytes(&prices_data[offset..offset + entry_size]);
+            *price = *bytemuck::from_bytes(&prices_data[offset..offset + entry_size]);
         }
         Some(Self { prices })
     }

@@ -157,6 +157,7 @@ fn obligation_farm_user_state(farm_state: &Pubkey, obligation: &Pubkey) -> Pubke
 ///
 /// Batches all farm user state existence checks into a single
 /// `get_multiple_accounts` call instead of sequential per-PDA fetches.
+#[allow(clippy::too_many_arguments)]
 pub async fn build_farm_ixs(
     rpc: &RpcClient,
     payer: &Pubkey,
@@ -226,7 +227,7 @@ pub async fn build_farm_ixs(
                     reserve: *reserve_pk,
                     reserve_farm_state: *farm_state,
                     obligation_farm: user_state,
-                    lending_market: lending_market,
+                    lending_market,
                 },
                 *mode,
             ));
@@ -241,7 +242,7 @@ pub async fn build_farm_ixs(
                 reserve: *reserve_pk,
                 reserve_farm_state: *farm_state,
                 obligation_farm_user_state: user_state,
-                lending_market: lending_market,
+                lending_market,
             },
             *mode,
         );
