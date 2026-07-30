@@ -142,7 +142,11 @@ enum Commands {
     /// maintain minimum SOL balance, unwrap WSOL
     Rebalance {
         /// Token to hold as base currency (default: USDC)
-        #[arg(long, env = "BASE_TOKEN", default_value = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")]
+        #[arg(
+            long,
+            env = "BASE_TOKEN",
+            default_value = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        )]
         base_token: Pubkey,
 
         /// Minimum SOL to keep for gas
@@ -191,7 +195,17 @@ async fn main() -> Result<()> {
             withdraw_reserve,
             repay_reserve,
             send,
-        } => cmd_liquidate(&bot, obligation, withdraw_reserve, repay_reserve, send, cli.priority_fee).await,
+        } => {
+            cmd_liquidate(
+                &bot,
+                obligation,
+                withdraw_reserve,
+                repay_reserve,
+                send,
+                cli.priority_fee,
+            )
+            .await
+        }
 
         Commands::Execute {
             budget,
@@ -205,7 +219,18 @@ async fn main() -> Result<()> {
             min_profit,
             max_attempts,
             max_failures,
-        } => cmd_crank(&bot, budget, Duration::from_secs(interval), min_profit, max_attempts, cli.priority_fee, max_failures).await,
+        } => {
+            cmd_crank(
+                &bot,
+                budget,
+                Duration::from_secs(interval),
+                min_profit,
+                max_attempts,
+                cli.priority_fee,
+                max_failures,
+            )
+            .await
+        }
 
         Commands::Swap {
             from,
@@ -302,7 +327,11 @@ async fn cmd_scan(bot: &BotConfig, min_debt_usd: f64, output: &PathBuf) -> Resul
         );
     }
 
-    all_results.sort_by(|a, b| b.actual_debt_usd.partial_cmp(&a.actual_debt_usd).unwrap_or(std::cmp::Ordering::Equal));
+    all_results.sort_by(|a, b| {
+        b.actual_debt_usd
+            .partial_cmp(&a.actual_debt_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let json = serde_json::to_string_pretty(&all_results)?;
     tokio::fs::write(output, &json).await?;
     info!(count = all_results.len(), path = %output.display(), "Saved scan results");
@@ -329,10 +358,9 @@ async fn cmd_liquidate(
     );
 
     let obligation_acc = bot.rpc.get_account(&obligation_pk).await?;
-    let obligation =
-        klend_interface::state::from_account_data::<klend_interface::state::Obligation>(
-            obligation_acc.data(),
-        )?;
+    let obligation = klend_interface::state::from_account_data::<klend_interface::state::Obligation>(
+        obligation_acc.data(),
+    )?;
 
     let mut reserves = client::fetch_reserves_for_obligation(&bot.rpc, obligation).await?;
 
@@ -372,11 +400,21 @@ async fn cmd_liquidate(
     >(market_acc.data())?;
 
     let debt_price = math::scaled_to_f64(u128::from(repay_reserve.liquidity.market_price_sf));
-    let repay_amount = math::max_liquidatable_amount(obligation, lending_market, borrow_position, debt_price, repay_reserve.liquidity.mint_decimals);
+    let repay_amount = math::max_liquidatable_amount(
+        obligation,
+        lending_market,
+        borrow_position,
+        debt_price,
+        repay_reserve.liquidity.mint_decimals,
+    );
     let repay_usd =
         repay_amount as f64 / 10f64.powi(repay_reserve.liquidity.mint_decimals as i32) * debt_price;
 
-    info!(repay_amount, repay_usd = format!("${repay_usd:.2}"), "Repay");
+    info!(
+        repay_amount,
+        repay_usd = format!("${repay_usd:.2}"),
+        "Repay"
+    );
 
     let all_reserve_infos: Vec<klend_interface::ReserveInfo> = reserves
         .iter()
@@ -425,7 +463,11 @@ async fn cmd_execute(
     max_attempts: usize,
     priority_fee: u64,
 ) -> Result<()> {
-    info!(budget = format!("${budget:.2}"), mode = if send { "LIVE" } else { "DRY RUN" }, "Execute");
+    info!(
+        budget = format!("${budget:.2}"),
+        mode = if send { "LIVE" } else { "DRY RUN" },
+        "Execute"
+    );
 
     let markets = resolve_markets(bot).await?;
 
@@ -450,12 +492,8 @@ async fn cmd_execute(
 
         let market_luts = resolve_luts_for_market(bot, &data).await;
 
-        let opportunities = score_all_opportunities(
-            &obligations,
-            &data,
-            &holdings,
-            effective_budget,
-        );
+        let opportunities =
+            score_all_opportunities(&obligations, &data, &holdings, effective_budget);
 
         if opportunities.is_empty() {
             info!(market = %market, "No profitable opportunities");
@@ -476,7 +514,21 @@ async fn cmd_execute(
         }
 
         let tp_cache = liquidator::build_token_program_cache(&data.reserves);
-        if try_opportunities(bot, &data, &obligations, &holdings, &opportunities, max_attempts, send, priority_fee, budget, &market_luts, &tp_cache).await? {
+        if try_opportunities(
+            bot,
+            &data,
+            &obligations,
+            &holdings,
+            &opportunities,
+            max_attempts,
+            send,
+            priority_fee,
+            budget,
+            &market_luts,
+            &tp_cache,
+        )
+        .await?
+        {
             return Ok(());
         }
     }
@@ -538,7 +590,9 @@ async fn cmd_crank(
                     "Crank cycle failed"
                 );
                 if consecutive_failures >= max_failures {
-                    error!("Circuit breaker triggered — too many consecutive failures. Shutting down.");
+                    error!(
+                        "Circuit breaker triggered — too many consecutive failures. Shutting down."
+                    );
                     return Err(anyhow::anyhow!(
                         "Circuit breaker: {consecutive_failures} consecutive failures"
                     ));
@@ -588,12 +642,8 @@ async fn crank_cycle(
 
         let market_luts = resolve_luts_for_market(bot, &data).await;
 
-        let mut opportunities = score_all_opportunities(
-            &obligations,
-            &data,
-            &holdings,
-            effective_budget,
-        );
+        let mut opportunities =
+            score_all_opportunities(&obligations, &data, &holdings, effective_budget);
 
         opportunities.retain(|(opp, _, _)| opp.estimated_profit_usd >= min_profit);
 
@@ -605,7 +655,21 @@ async fn crank_cycle(
         info!(count = opportunities.len(), market = %market, "Found opportunities");
 
         let tp_cache = liquidator::build_token_program_cache(&data.reserves);
-        if try_opportunities(bot, &data, &obligations, &holdings, &opportunities, max_attempts, true, priority_fee, budget, &market_luts, &tp_cache).await? {
+        if try_opportunities(
+            bot,
+            &data,
+            &obligations,
+            &holdings,
+            &opportunities,
+            max_attempts,
+            true,
+            priority_fee,
+            budget,
+            &market_luts,
+            &tp_cache,
+        )
+        .await?
+        {
             any_success = true;
         }
     }
@@ -617,10 +681,17 @@ async fn crank_cycle(
 // Swap
 // ---------------------------------------------------------------------------
 
-async fn cmd_swap(bot: &BotConfig, from: Pubkey, to: Pubkey, amount: u64, slippage_bps: u16) -> Result<()> {
+async fn cmd_swap(
+    bot: &BotConfig,
+    from: Pubkey,
+    to: Pubkey,
+    amount: u64,
+    slippage_bps: u16,
+) -> Result<()> {
     info!(from = %from, to = %to, amount, slippage_bps, "Swapping");
 
-    let quote = kswap::get_swap_quote(&bot.http, &from, &to, amount, &bot.owner, slippage_bps).await?;
+    let quote =
+        kswap::get_swap_quote(&bot.http, &from, &to, amount, &bot.owner, slippage_bps).await?;
     info!(
         expected_out = quote.expected_amount_out,
         min_out = quote.min_amount_out,
@@ -687,13 +758,20 @@ async fn cmd_rebalance(
     // Step 1: Check if SOL needs a top-up from base token.
     if let Some(topup_amount) = liquidator::sol_topup_needed(&holdings, &all_reserves, &config) {
         info!(amount = topup_amount, "Topping up SOL from base token");
-        match kswap::get_swap_quote(&bot.http, &base_token, &consts::WSOL_MINT, topup_amount, &bot.owner, slippage_bps).await {
-            Ok(quote) => {
-                match kswap::send_swap_transaction(&bot.rpc, &bot.signer, &quote).await {
-                    Ok(sig) => info!(signature = %sig, "SOL top-up swap executed"),
-                    Err(e) => error!(error = %e, "SOL top-up swap failed"),
-                }
-            }
+        match kswap::get_swap_quote(
+            &bot.http,
+            &base_token,
+            &consts::WSOL_MINT,
+            topup_amount,
+            &bot.owner,
+            slippage_bps,
+        )
+        .await
+        {
+            Ok(quote) => match kswap::send_swap_transaction(&bot.rpc, &bot.signer, &quote).await {
+                Ok(sig) => info!(signature = %sig, "SOL top-up swap executed"),
+                Err(e) => error!(error = %e, "SOL top-up swap failed"),
+            },
             Err(e) => error!(error = %e, "SOL top-up quote failed"),
         }
 
@@ -718,12 +796,16 @@ async fn cmd_rebalance(
             if h.usd_value > 1.0 {
                 // This is the SPL WSOL token account, not native SOL.
                 // Check if there's actually a WSOL token account with balance.
-                let wsol_ata = spl_associated_token_account::get_associated_token_address_with_program_id(
-                    &bot.owner, &consts::WSOL_MINT, &consts::TOKEN_PROGRAM_ID,
-                );
+                let wsol_ata =
+                    spl_associated_token_account::get_associated_token_address_with_program_id(
+                        &bot.owner,
+                        &consts::WSOL_MINT,
+                        &consts::TOKEN_PROGRAM_ID,
+                    );
                 if let Ok(acc) = bot.rpc.get_account(&wsol_ata).await {
                     if acc.data.len() >= 72 {
-                        let token_balance = u64::from_le_bytes(acc.data[64..72].try_into().unwrap());
+                        let token_balance =
+                            u64::from_le_bytes(acc.data[64..72].try_into().unwrap());
                         if token_balance > 0 {
                             info!(balance = token_balance, "Unwrapping WSOL");
                             let unwrap_ixs = liquidator::build_unwrap_wsol_ixs(&bot.owner);
@@ -742,7 +824,16 @@ async fn cmd_rebalance(
     let swaps = liquidator::plan_rebalance(&holdings, &config);
     for (from_mint, amount) in &swaps {
         info!(from = %from_mint, amount, "Swapping to base token");
-        match kswap::get_swap_quote(&bot.http, from_mint, &base_token, *amount, &bot.owner, slippage_bps).await {
+        match kswap::get_swap_quote(
+            &bot.http,
+            from_mint,
+            &base_token,
+            *amount,
+            &bot.owner,
+            slippage_bps,
+        )
+        .await
+        {
             Ok(quote) => {
                 info!(expected_out = quote.expected_amount_out, "Quote");
                 match kswap::send_swap_transaction(&bot.rpc, &bot.signer, &quote).await {
@@ -797,7 +888,9 @@ async fn wait_for_token_balance(
     token_program: &Pubkey,
 ) {
     let ata = spl_associated_token_account::get_associated_token_address_with_program_id(
-        owner, mint, token_program,
+        owner,
+        mint,
+        token_program,
     );
     for _ in 0..20 {
         if let Ok(acc) = rpc.get_account(&ata).await {
@@ -959,7 +1052,8 @@ async fn execute_liquidation(
     send: bool,
 ) -> Result<Option<solana_sdk::signature::Signature>> {
     let ctoken_mint = attempt.withdraw_reserve.collateral.mint_pubkey;
-    let ctoken_program = liquidator::get_token_program(&bot.rpc, token_program_cache, &ctoken_mint).await;
+    let ctoken_program =
+        liquidator::get_token_program(&bot.rpc, token_program_cache, &ctoken_mint).await;
 
     let user_source_liquidity =
         spl_associated_token_account::get_associated_token_address_with_program_id(
@@ -981,13 +1075,21 @@ async fn execute_liquidation(
         );
 
     let farms = instructions::FarmAccounts::from_reserves(
-        &attempt.obligation_pk, attempt.withdraw_reserve, attempt.repay_reserve,
+        &attempt.obligation_pk,
+        attempt.withdraw_reserve,
+        attempt.repay_reserve,
     );
     let (farm_pre_ixs, farm_post_ixs) = instructions::build_farm_ixs(
-        &bot.rpc, &bot.owner, &attempt.obligation_pk, &attempt.obligation.owner,
-        &attempt.withdraw_reserve_pk, attempt.withdraw_reserve,
-        &attempt.repay_reserve_pk, attempt.repay_reserve,
-    ).await;
+        &bot.rpc,
+        &bot.owner,
+        &attempt.obligation_pk,
+        &attempt.obligation.owner,
+        &attempt.withdraw_reserve_pk,
+        attempt.withdraw_reserve,
+        &attempt.repay_reserve_pk,
+        attempt.repay_reserve,
+    )
+    .await;
 
     let mut liq_ixs = farm_pre_ixs;
     liq_ixs.extend(instructions::build_refresh_and_liquidate_ixs(
@@ -996,7 +1098,10 @@ async fn execute_liquidation(
         attempt.repay_reserve,
         attempt.withdraw_reserve_pk,
         attempt.withdraw_reserve,
-        &klend_interface::ObligationInfo::from_obligation(attempt.obligation_pk, attempt.obligation),
+        &klend_interface::ObligationInfo::from_obligation(
+            attempt.obligation_pk,
+            attempt.obligation,
+        ),
         &attempt.all_reserve_infos,
         user_source_liquidity,
         user_destination_collateral,
@@ -1067,15 +1172,26 @@ async fn try_opportunities(
         debug!(rank = rank + 1, obligation = %candidate.obligation, profit = format!("${:.4}", candidate.estimated_profit_usd), "Trying");
 
         // Look up from already-fetched data — no re-fetching.
-        let repay_reserve = match data.reserves.iter().find(|(pk, _)| *pk == candidate.repay_reserve) {
+        let repay_reserve = match data
+            .reserves
+            .iter()
+            .find(|(pk, _)| *pk == candidate.repay_reserve)
+        {
             Some((_, r)) => r,
             None => continue,
         };
-        let withdraw_reserve = match data.reserves.iter().find(|(pk, _)| *pk == candidate.withdraw_reserve) {
+        let withdraw_reserve = match data
+            .reserves
+            .iter()
+            .find(|(pk, _)| *pk == candidate.withdraw_reserve)
+        {
             Some((_, r)) => r,
             None => continue,
         };
-        let obligation = match obligations.iter().find(|(pk, _)| *pk == candidate.obligation) {
+        let obligation = match obligations
+            .iter()
+            .find(|(pk, _)| *pk == candidate.obligation)
+        {
             Some((_, o)) => o,
             None => continue,
         };
@@ -1126,7 +1242,10 @@ async fn try_opportunities(
                 None => continue,
             };
 
-            let base_reserve = data.reserves.iter().find(|(_, r)| r.liquidity.mint_pubkey == *base_mint);
+            let base_reserve = data
+                .reserves
+                .iter()
+                .find(|(_, r)| r.liquidity.mint_pubkey == *base_mint);
             let base_price = base_reserve
                 .map(|(_, r)| math::scaled_to_f64(u128::from(r.liquidity.market_price_sf)))
                 .unwrap_or(1.0);
@@ -1134,8 +1253,8 @@ async fn try_opportunities(
                 .map(|(_, r)| r.liquidity.mint_decimals)
                 .unwrap_or(9);
 
-            let budget_in_base =
-                (budget.min(holding.usd_value) / base_price * 10f64.powi(base_decimals as i32)) as u64;
+            let budget_in_base = (budget.min(holding.usd_value) / base_price
+                * 10f64.powi(base_decimals as i32)) as u64;
             let swap_amount = budget_in_base.min(holding.balance);
 
             info!(from = %base_mint, to = %candidate.repay_mint, swap_amount, "Swapping");
@@ -1160,9 +1279,13 @@ async fn try_opportunities(
                                 &bot.owner,
                                 &candidate.repay_mint,
                                 &repay_reserve.liquidity.token_program,
-                            ).await;
+                            )
+                            .await;
                         }
-                        Err(e) => { info!(error = %e, "Swap send failed"); continue; }
+                        Err(e) => {
+                            info!(error = %e, "Swap send failed");
+                            continue;
+                        }
                     }
                 }
                 Err(e) => {
@@ -1173,13 +1296,19 @@ async fn try_opportunities(
             }
         }
 
-        match execute_liquidation(bot, &attempt, luts, token_program_cache, priority_fee, send).await {
+        match execute_liquidation(bot, &attempt, luts, token_program_cache, priority_fee, send)
+            .await
+        {
             Ok(Some(sig)) => {
                 info!(signature = %sig, "Liquidation executed");
                 return Ok(true);
             }
             Ok(None) if !send => {
-                info!(rank = rank + 1, profit = format!("${:.4}", candidate.estimated_profit_usd), "Dry run — simulation passed");
+                info!(
+                    rank = rank + 1,
+                    profit = format!("${:.4}", candidate.estimated_profit_usd),
+                    "Dry run — simulation passed"
+                );
                 return Ok(true);
             }
             Ok(None) => {

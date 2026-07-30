@@ -5,11 +5,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_pubkey::Pubkey;
-use solana_sdk::{
-    signature::Signature,
-    signer::Signer,
-    transaction::VersionedTransaction,
-};
+use solana_sdk::{signature::Signature, signer::Signer, transaction::VersionedTransaction};
 use tracing::debug;
 
 use crate::consts::KSWAP_API;
@@ -111,7 +107,10 @@ pub async fn get_swap_quote(
         anyhow::bail!("kswap API error {status}: {body}");
     }
 
-    let kswap: KswapResponse = resp.json().await.context("Failed to parse kswap response")?;
+    let kswap: KswapResponse = resp
+        .json()
+        .await
+        .context("Failed to parse kswap response")?;
     Ok(kswap.data)
 }
 
@@ -122,10 +121,7 @@ pub async fn get_swap_quote(
 /// Validate that a kswap pre-built transaction only contains instructions from
 /// known, trusted programs. Rejects transactions with unexpected program IDs
 /// that could drain the wallet.
-fn validate_swap_transaction(
-    tx: &VersionedTransaction,
-    wallet: &Pubkey,
-) -> Result<()> {
+fn validate_swap_transaction(tx: &VersionedTransaction, wallet: &Pubkey) -> Result<()> {
     let account_keys = tx.message.static_account_keys();
 
     for ix in tx.message.instructions() {
@@ -144,9 +140,7 @@ fn validate_swap_transaction(
     // Verify the wallet is the fee payer (first account).
     if let Some(first_key) = account_keys.first() {
         if first_key != wallet {
-            anyhow::bail!(
-                "Swap transaction fee payer {first_key} does not match wallet {wallet}"
-            );
+            anyhow::bail!("Swap transaction fee payer {first_key} does not match wallet {wallet}");
         }
     }
 
@@ -194,8 +188,7 @@ pub async fn send_swap_transaction(
     let mut msg = swap_tx.message;
     msg.set_recent_blockhash(blockhash);
 
-    let signed =
-        VersionedTransaction::try_new(msg, &[signer]).context("Failed to sign swap tx")?;
+    let signed = VersionedTransaction::try_new(msg, &[signer]).context("Failed to sign swap tx")?;
 
     let sig = rpc
         .send_and_confirm_transaction(&signed)

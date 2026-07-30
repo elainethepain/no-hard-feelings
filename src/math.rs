@@ -33,7 +33,8 @@ fn safe_div(a: f64, b: f64) -> f64 {
 /// Returns 1.0 if ctoken supply is 0 (no deposits yet).
 fn ctoken_exchange_rate(reserve: &Reserve) -> f64 {
     let available = reserve.liquidity.total_available_amount as f64;
-    let borrowed: f64 = Fraction::from_bits(u128::from(reserve.liquidity.borrowed_amount_sf)).to_num();
+    let borrowed: f64 =
+        Fraction::from_bits(u128::from(reserve.liquidity.borrowed_amount_sf)).to_num();
     let total_liquidity = available + borrowed;
     let ctoken_supply = reserve.collateral.mint_total_supply as f64;
     if ctoken_supply <= 0.0 {
@@ -69,16 +70,19 @@ pub fn filter_obligation_fresh(
             if deposit.deposit_reserve == Pubkey::default() || deposit.deposited_amount == 0 {
                 continue;
             }
-            if let Some((_, reserve)) = reserves.iter().find(|(pk, _)| *pk == deposit.deposit_reserve) {
+            if let Some((_, reserve)) = reserves
+                .iter()
+                .find(|(pk, _)| *pk == deposit.deposit_reserve)
+            {
                 let price = scaled_to_f64(u128::from(reserve.liquidity.market_price_sf));
                 let decimals = reserve.liquidity.mint_decimals;
                 let exchange_rate = ctoken_exchange_rate(reserve);
-                let deposit_value = deposit.deposited_amount as f64
-                    * exchange_rate
+                let deposit_value = deposit.deposited_amount as f64 * exchange_rate
                     / 10f64.powi(decimals as i32)
                     * price;
                 total_deposit += deposit_value;
-                weighted_thresh += deposit_value * reserve.liquidation_threshold_pct() as f64 / 100.0;
+                weighted_thresh +=
+                    deposit_value * reserve.liquidation_threshold_pct() as f64 / 100.0;
             }
         }
         (total_deposit, weighted_thresh)
@@ -99,12 +103,11 @@ pub fn filter_obligation_fresh(
             if borrowed_amount <= 0.0 {
                 continue;
             }
-            if let Some((_, reserve)) = reserves.iter().find(|(pk, _)| *pk == borrow.borrow_reserve) {
+            if let Some((_, reserve)) = reserves.iter().find(|(pk, _)| *pk == borrow.borrow_reserve)
+            {
                 let price = scaled_to_f64(u128::from(reserve.liquidity.market_price_sf));
                 let decimals = reserve.liquidity.mint_decimals;
-                let borrow_value = borrowed_amount
-                    / 10f64.powi(decimals as i32)
-                    * price;
+                let borrow_value = borrowed_amount / 10f64.powi(decimals as i32) * price;
                 let borrow_factor = reserve.borrow_factor_pct() as f64 / 100.0;
                 total_borrow += borrow_value * borrow_factor;
             }
@@ -119,8 +122,6 @@ pub fn filter_obligation_fresh(
     // Liquidatable when borrow-factor-adjusted debt exceeds the weighted threshold.
     borrowed_usd >= weighted_threshold
 }
-
-
 
 /// Summary statistics for an obligation.
 #[derive(Debug, Clone)]
@@ -138,7 +139,11 @@ pub fn obligation_stats(obligation: &Obligation) -> ObligationStats {
     let adjusted_debt = scaled_to_f64(obligation.borrow_factor_adjusted_debt_value());
     let actual_debt = scaled_to_f64(obligation.borrowed_assets_market_value());
     let unhealthy = scaled_to_f64(obligation.unhealthy_borrow_value());
-    let ltv_actual = if deposited > 0.0 { actual_debt / deposited } else { 0.0 };
+    let ltv_actual = if deposited > 0.0 {
+        actual_debt / deposited
+    } else {
+        0.0
+    };
 
     ObligationStats {
         deposited_usd: deposited,
@@ -237,7 +242,11 @@ pub fn max_liquidatable_amount(
 
     let deposited = scaled_to_f64(obligation.deposited_value());
     let actual_debt = scaled_to_f64(obligation.borrowed_assets_market_value());
-    let actual_ltv = if deposited > 0.0 { safe_div(actual_debt, deposited) } else { 1.0 };
+    let actual_ltv = if deposited > 0.0 {
+        safe_div(actual_debt, deposited)
+    } else {
+        1.0
+    };
 
     let insolvency_threshold = lending_market.insolvency_risk_unhealthy_ltv_pct as f64 / 100.0;
     let close_factor_pct = if actual_ltv >= insolvency_threshold {
@@ -358,7 +367,13 @@ pub fn process_obligations(
 
         let debt_price = scaled_to_f64(u128::from(repay_reserve.liquidity.market_price_sf));
         let debt_decimals = repay_reserve.liquidity.mint_decimals;
-        let max_repay = max_liquidatable_amount(obligation, lending_market, borrow_position, debt_price, debt_decimals);
+        let max_repay = max_liquidatable_amount(
+            obligation,
+            lending_market,
+            borrow_position,
+            debt_price,
+            debt_decimals,
+        );
         if max_repay == 0 {
             continue;
         }

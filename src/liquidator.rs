@@ -64,7 +64,10 @@ pub async fn scan_wallet(rpc: &RpcClient, owner: &Pubkey) -> Result<Holdings> {
     // SPL Token + Token-2022 accounts (fetched in parallel, either can fail independently).
     let (spl_result, t22_result) = tokio::join!(
         rpc.get_token_accounts_by_owner(owner, TokenAccountsFilter::ProgramId(TOKEN_PROGRAM_ID)),
-        rpc.get_token_accounts_by_owner(owner, TokenAccountsFilter::ProgramId(TOKEN_2022_PROGRAM_ID)),
+        rpc.get_token_accounts_by_owner(
+            owner,
+            TokenAccountsFilter::ProgramId(TOKEN_2022_PROGRAM_ID)
+        ),
     );
     let mut token_accounts = spl_result.unwrap_or_default();
     if let Ok(t22) = t22_result {
@@ -170,20 +173,19 @@ pub async fn get_token_program(
 /// SOL) and immediately recreate it so it exists for future operations.
 pub fn build_unwrap_wsol_ixs(owner: &Pubkey) -> Vec<Instruction> {
     let wsol_ata = spl_associated_token_account::get_associated_token_address_with_program_id(
-        owner, &WSOL_MINT, &TOKEN_PROGRAM_ID,
+        owner,
+        &WSOL_MINT,
+        &TOKEN_PROGRAM_ID,
     );
 
     vec![
-        spl_token::instruction::close_account(
-            &TOKEN_PROGRAM_ID,
-            &wsol_ata,
-            owner,
-            owner,
-            &[],
-        )
-        .expect("close_account instruction"),
+        spl_token::instruction::close_account(&TOKEN_PROGRAM_ID, &wsol_ata, owner, owner, &[])
+            .expect("close_account instruction"),
         spl_associated_token_account::instruction::create_associated_token_account(
-            owner, owner, &WSOL_MINT, &TOKEN_PROGRAM_ID,
+            owner,
+            owner,
+            &WSOL_MINT,
+            &TOKEN_PROGRAM_ID,
         ),
     ]
 }
@@ -206,10 +208,7 @@ pub struct RebalanceConfig {
 
 /// Determine which swaps are needed to rebalance the wallet.
 /// Returns a list of (from_mint, amount_in_native_units) to swap into the base token.
-pub fn plan_rebalance(
-    holdings: &Holdings,
-    config: &RebalanceConfig,
-) -> Vec<(Pubkey, u64)> {
+pub fn plan_rebalance(holdings: &Holdings, config: &RebalanceConfig) -> Vec<(Pubkey, u64)> {
     let mut swaps = Vec::new();
 
     for holding in &holdings.holdings {
@@ -255,12 +254,14 @@ pub fn sol_topup_needed(
     let target = config.min_sol_balance * 2.0;
     let missing_sol = target - sol_balance_ui;
 
-    let sol_price = reserves.iter()
+    let sol_price = reserves
+        .iter()
         .find(|(_, r)| r.liquidity.mint_pubkey == WSOL_MINT)
         .map(|(_, r)| scaled_to_f64(u128::from(r.liquidity.market_price_sf)))
         .unwrap_or(100.0);
 
-    let base_reserve = reserves.iter()
+    let base_reserve = reserves
+        .iter()
         .find(|(_, r)| r.liquidity.mint_pubkey == config.base_token);
     let base_price = base_reserve
         .map(|(_, r)| scaled_to_f64(u128::from(r.liquidity.market_price_sf)))
@@ -269,8 +270,8 @@ pub fn sol_topup_needed(
         .map(|(_, r)| r.liquidity.mint_decimals)
         .unwrap_or(6);
 
-    let base_amount_needed = missing_sol * sol_price / base_price
-        * (1.0 + config.slippage_bps as f64 / 10_000.0);
+    let base_amount_needed =
+        missing_sol * sol_price / base_price * (1.0 + config.slippage_bps as f64 / 10_000.0);
     let native_amount = (base_amount_needed * 10f64.powi(base_decimals as i32)) as u64;
 
     info!(

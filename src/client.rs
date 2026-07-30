@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::{Context, Result};
 use klend_interface::{
-    state::{LendingMarket, Obligation, Reserve, SplDiscriminate, from_account_data},
+    state::{from_account_data, LendingMarket, Obligation, Reserve, SplDiscriminate},
     KLEND_PROGRAM_ID,
 };
 use solana_account::ReadableAccount;
@@ -122,10 +122,7 @@ pub async fn fetch_obligations(
 // ---------------------------------------------------------------------------
 
 /// Fetch the LendingMarket and all its reserves.
-pub async fn fetch_market_and_reserves(
-    rpc: &RpcClient,
-    market: &Pubkey,
-) -> Result<MarketData> {
+pub async fn fetch_market_and_reserves(rpc: &RpcClient, market: &Pubkey) -> Result<MarketData> {
     let market_account = rpc
         .get_account(market)
         .await
@@ -133,17 +130,18 @@ pub async fn fetch_market_and_reserves(
     let lending_market = *from_account_data::<LendingMarket>(market_account.data())
         .map_err(|e| anyhow::anyhow!("Failed to parse LendingMarket: {e}"))?;
 
-    let filter = RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-        32,
-        market.to_bytes().to_vec(),
-    ));
+    let filter = RpcFilterType::Memcmp(Memcmp::new_raw_bytes(32, market.to_bytes().to_vec()));
     let reserve_size = 8 + std::mem::size_of::<Reserve>() as u64;
     let discrim_filter = RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
         0,
         Reserve::SPL_DISCRIMINATOR_SLICE.to_vec(),
     ));
     let config = RpcProgramAccountsConfig {
-        filters: Some(vec![discrim_filter, filter, RpcFilterType::DataSize(reserve_size)]),
+        filters: Some(vec![
+            discrim_filter,
+            filter,
+            RpcFilterType::DataSize(reserve_size),
+        ]),
         account_config: RpcAccountInfoConfig {
             encoding: Some(UiAccountEncoding::Base64Zstd),
             ..Default::default()

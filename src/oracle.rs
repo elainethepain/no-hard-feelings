@@ -222,10 +222,7 @@ pub async fn fetch_fresh_prices(
 ///
 /// This gives `process_obligations()` accurate price data for scoring,
 /// eliminating false positives from stale on-chain obligation values.
-pub fn apply_fresh_prices(
-    reserves: &mut [(Pubkey, Reserve)],
-    fresh_prices: &HashMap<Pubkey, f64>,
-) {
+pub fn apply_fresh_prices(reserves: &mut [(Pubkey, Reserve)], fresh_prices: &HashMap<Pubkey, f64>) {
     for (reserve_pk, reserve) in reserves.iter_mut() {
         if let Some(&usd_price) = fresh_prices.get(reserve_pk) {
             let price_sf: u128 = Fraction::from_num(usd_price).to_bits();

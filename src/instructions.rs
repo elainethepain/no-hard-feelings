@@ -6,8 +6,8 @@ use klend_interface::{
             LiquidateObligationAndRedeemReserveCollateralV2Accounts,
         },
         obligation::{
-            init_obligation_farms_for_reserve, InitObligationFarmsForReserveAccounts,
-            refresh_obligation_farms_for_reserve, RefreshObligationFarmsForReserveAccounts,
+            init_obligation_farms_for_reserve, refresh_obligation_farms_for_reserve,
+            InitObligationFarmsForReserveAccounts, RefreshObligationFarmsForReserveAccounts,
         },
     },
     pda,
@@ -73,9 +73,7 @@ pub fn reserve_info_with_null_check(address: Pubkey, reserve: &Reserve) -> Reser
                 .switchboard_configuration
                 .twap_aggregator,
         ),
-        scope_prices: maybe_null_pk(
-            reserve.config.token_info.scope_configuration.price_feed,
-        ),
+        scope_prices: maybe_null_pk(reserve.config.token_info.scope_configuration.price_feed),
     }
 }
 
@@ -120,7 +118,10 @@ pub fn build_ata_creation_ixs(
 // ---------------------------------------------------------------------------
 
 /// Build compute budget instructions with a priority fee.
-pub fn build_compute_budget_ixs(compute_units: u32, priority_fee_micro_lamports: u64) -> Vec<Instruction> {
+pub fn build_compute_budget_ixs(
+    compute_units: u32,
+    priority_fee_micro_lamports: u64,
+) -> Vec<Instruction> {
     vec![
         ComputeBudgetInstruction::set_compute_unit_limit(compute_units),
         ComputeBudgetInstruction::set_compute_unit_price(priority_fee_micro_lamports),
@@ -138,7 +139,11 @@ pub const FARM_MODE_COLLATERAL: u8 = 1;
 /// Derive the obligation farm user state PDA.
 fn obligation_farm_user_state(farm_state: &Pubkey, obligation: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(
-        &[FARMS_USER_STATE_SEED, farm_state.as_ref(), obligation.as_ref()],
+        &[
+            FARMS_USER_STATE_SEED,
+            farm_state.as_ref(),
+            obligation.as_ref(),
+        ],
         &FARMS_PROGRAM_ID,
     )
     .0
@@ -170,9 +175,21 @@ pub async fn build_farm_ixs(
 
     // Collect all (reserve, farm_state, mode) combinations with active farms.
     let farm_entries: Vec<(Pubkey, Pubkey, u8)> = [
-        (*collateral_reserve_pk, collateral_reserve.farm_collateral, FARM_MODE_COLLATERAL),
-        (*collateral_reserve_pk, collateral_reserve.farm_debt, FARM_MODE_DEBT),
-        (*debt_reserve_pk, debt_reserve.farm_collateral, FARM_MODE_COLLATERAL),
+        (
+            *collateral_reserve_pk,
+            collateral_reserve.farm_collateral,
+            FARM_MODE_COLLATERAL,
+        ),
+        (
+            *collateral_reserve_pk,
+            collateral_reserve.farm_debt,
+            FARM_MODE_DEBT,
+        ),
+        (
+            *debt_reserve_pk,
+            debt_reserve.farm_collateral,
+            FARM_MODE_COLLATERAL,
+        ),
         (*debt_reserve_pk, debt_reserve.farm_debt, FARM_MODE_DEBT),
     ]
     .into_iter()
@@ -285,8 +302,6 @@ impl FarmAccounts {
     }
 }
 
-
-
 #[allow(clippy::too_many_arguments)]
 pub fn build_refresh_and_liquidate_ixs(
     liquidator: Pubkey,
@@ -304,8 +319,7 @@ pub fn build_refresh_and_liquidate_ixs(
     max_allowed_ltv_override_percent: u64,
     farms: &FarmAccounts,
 ) -> Vec<Instruction> {
-    let (lma, _) =
-        pda::lending_market_authority(&KLEND_PROGRAM_ID, &repay_reserve.lending_market);
+    let (lma, _) = pda::lending_market_authority(&KLEND_PROGRAM_ID, &repay_reserve.lending_market);
 
     let repay_info = reserve_info_with_null_check(repay_reserve_pk, repay_reserve);
     let withdraw_info = reserve_info_with_null_check(withdraw_reserve_pk, withdraw_reserve);
@@ -350,8 +364,7 @@ pub fn build_refresh_and_liquidate_ixs(
     }
     if let Some(referrer) = obligation.referrer {
         for borrow_reserve in &obligation.borrow_reserves {
-            let (rts, _) =
-                pda::referrer_token_state(&KLEND_PROGRAM_ID, &referrer, borrow_reserve);
+            let (rts, _) = pda::referrer_token_state(&KLEND_PROGRAM_ID, &referrer, borrow_reserve);
             remaining.push(AccountMeta::new(rts, false));
         }
     }
