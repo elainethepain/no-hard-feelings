@@ -515,11 +515,18 @@ async fn cmd_execute(
 
         let tp_cache = liquidator::build_token_program_cache(&data.reserves);
         let ctx = model::ExecutionContext {
-            bot, data: &data, obligations: &obligations,
-            holdings: &holdings, luts: &market_luts, token_program_cache: &tp_cache,
+            bot,
+            data: &data,
+            obligations: &obligations,
+            holdings: &holdings,
+            luts: &market_luts,
+            token_program_cache: &tp_cache,
         };
         let opts = model::ExecutionOptions {
-            max_attempts, send, priority_fee, budget,
+            max_attempts,
+            send,
+            priority_fee,
+            budget,
         };
         if try_opportunities(&ctx, &opts, &opportunities).await? {
             return Ok(());
@@ -649,11 +656,18 @@ async fn crank_cycle(
 
         let tp_cache = liquidator::build_token_program_cache(&data.reserves);
         let ctx = model::ExecutionContext {
-            bot, data: &data, obligations: &obligations,
-            holdings: &holdings, luts: &market_luts, token_program_cache: &tp_cache,
+            bot,
+            data: &data,
+            obligations: &obligations,
+            holdings: &holdings,
+            luts: &market_luts,
+            token_program_cache: &tp_cache,
         };
         let opts = model::ExecutionOptions {
-            max_attempts, send: true, priority_fee, budget,
+            max_attempts,
+            send: true,
+            priority_fee,
+            budget,
         };
         if try_opportunities(&ctx, &opts, &opportunities).await? {
             any_success = true;
@@ -1069,9 +1083,8 @@ async fn execute_liquidation(
         reserve: attempt.repay_reserve,
     };
 
-    let farms = instructions::FarmAccounts::from_reserves(
-        &attempt.obligation_pk, &collateral, &debt,
-    );
+    let farms =
+        instructions::FarmAccounts::from_reserves(&attempt.obligation_pk, &collateral, &debt);
     let (farm_pre_ixs, farm_post_ixs) = instructions::build_farm_ixs(
         &bot.rpc,
         &bot.owner,
