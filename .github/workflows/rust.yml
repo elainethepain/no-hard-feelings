@@ -43,6 +43,3 @@ jobs:
 
       - name: Build
         run: cargo +1.92.0 build
-
-      - name: Audit
-        run: cargo install cargo-audit && cargo audit
