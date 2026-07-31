@@ -514,21 +514,14 @@ async fn cmd_execute(
         }
 
         let tp_cache = liquidator::build_token_program_cache(&data.reserves);
-        if try_opportunities(
-            bot,
-            &data,
-            &obligations,
-            &holdings,
-            &opportunities,
-            max_attempts,
-            send,
-            priority_fee,
-            budget,
-            &market_luts,
-            &tp_cache,
-        )
-        .await?
-        {
+        let ctx = model::ExecutionContext {
+            bot, data: &data, obligations: &obligations,
+            holdings: &holdings, luts: &market_luts, token_program_cache: &tp_cache,
+        };
+        let opts = model::ExecutionOptions {
+            max_attempts, send, priority_fee, budget,
+        };
+        if try_opportunities(&ctx, &opts, &opportunities).await? {
             return Ok(());
         }
     }
@@ -655,21 +648,14 @@ async fn crank_cycle(
         info!(count = opportunities.len(), market = %market, "Found opportunities");
 
         let tp_cache = liquidator::build_token_program_cache(&data.reserves);
-        if try_opportunities(
-            bot,
-            &data,
-            &obligations,
-            &holdings,
-            &opportunities,
-            max_attempts,
-            true,
-            priority_fee,
-            budget,
-            &market_luts,
-            &tp_cache,
-        )
-        .await?
-        {
+        let ctx = model::ExecutionContext {
+            bot, data: &data, obligations: &obligations,
+            holdings: &holdings, luts: &market_luts, token_program_cache: &tp_cache,
+        };
+        let opts = model::ExecutionOptions {
+            max_attempts, send: true, priority_fee, budget,
+        };
+        if try_opportunities(&ctx, &opts, &opportunities).await? {
             any_success = true;
         }
     }
@@ -1074,20 +1060,25 @@ async fn execute_liquidation(
             &attempt.withdraw_reserve.liquidity.token_program,
         );
 
+    let collateral = model::ReserveWithKey {
+        pubkey: attempt.withdraw_reserve_pk,
+        reserve: attempt.withdraw_reserve,
+    };
+    let debt = model::ReserveWithKey {
+        pubkey: attempt.repay_reserve_pk,
+        reserve: attempt.repay_reserve,
+    };
+
     let farms = instructions::FarmAccounts::from_reserves(
-        &attempt.obligation_pk,
-        attempt.withdraw_reserve,
-        attempt.repay_reserve,
+        &attempt.obligation_pk, &collateral, &debt,
     );
     let (farm_pre_ixs, farm_post_ixs) = instructions::build_farm_ixs(
         &bot.rpc,
         &bot.owner,
         &attempt.obligation_pk,
         &attempt.obligation.owner,
-        &attempt.withdraw_reserve_pk,
-        attempt.withdraw_reserve,
-        &attempt.repay_reserve_pk,
-        attempt.repay_reserve,
+        &collateral,
+        &debt,
     )
     .await;
 
@@ -1149,31 +1140,23 @@ async fn execute_liquidation(
 }
 
 /// Try executing opportunities in order. Returns true if one succeeds.
-#[allow(clippy::too_many_arguments)]
 async fn try_opportunities(
-    bot: &BotConfig,
-    data: &client::MarketData,
-    obligations: &[(Pubkey, klend_interface::state::Obligation)],
-    holdings: &liquidator::Holdings,
+    ctx: &model::ExecutionContext<'_>,
+    opts: &model::ExecutionOptions,
     opportunities: &[(model::ScoredEntry, Pubkey, bool)],
-    max_attempts: usize,
-    send: bool,
-    priority_fee: u64,
-    budget: f64,
-    luts: &[AddressLookupTableAccount],
-    token_program_cache: &std::collections::HashMap<Pubkey, Pubkey>,
 ) -> Result<bool> {
     // Cache swap failures: if kswap has no route for (from, to), don't retry it
     // for every candidate in this cycle.
     let mut failed_swap_pairs: HashSet<(Pubkey, Pubkey)> = HashSet::new();
 
     for (rank, (candidate, base_mint, needs_swap)) in
-        opportunities.iter().enumerate().take(max_attempts)
+        opportunities.iter().enumerate().take(opts.max_attempts)
     {
         debug!(rank = rank + 1, obligation = %candidate.obligation, profit = format!("${:.4}", candidate.estimated_profit_usd), "Trying");
 
         // Look up from already-fetched data — no re-fetching.
-        let repay_reserve = match data
+        let repay_reserve = match ctx
+            .data
             .reserves
             .iter()
             .find(|(pk, _)| *pk == candidate.repay_reserve)
@@ -1181,7 +1164,8 @@ async fn try_opportunities(
             Some((_, r)) => r,
             None => continue,
         };
-        let withdraw_reserve = match data
+        let withdraw_reserve = match ctx
+            .data
             .reserves
             .iter()
             .find(|(pk, _)| *pk == candidate.withdraw_reserve)
@@ -1189,7 +1173,8 @@ async fn try_opportunities(
             Some((_, r)) => r,
             None => continue,
         };
-        let obligation = match obligations
+        let obligation = match ctx
+            .obligations
             .iter()
             .find(|(pk, _)| *pk == candidate.obligation)
         {
@@ -1210,7 +1195,8 @@ async fn try_opportunities(
                     .map(|b| b.borrow_reserve),
             )
             .filter_map(|pk| {
-                data.reserves
+                ctx.data
+                    .reserves
                     .iter()
                     .find(|(rpk, _)| *rpk == pk)
                     .map(|(rpk, r)| instructions::reserve_info_with_null_check(*rpk, r))
@@ -1229,21 +1215,21 @@ async fn try_opportunities(
         };
 
         // Swap into the debt token if needed — before executing the liquidation.
-        if send && *needs_swap {
+        if opts.send && *needs_swap {
             let swap_pair = (*base_mint, candidate.repay_mint);
 
-            // Skip if we already know this swap pair has no route.
             if failed_swap_pairs.contains(&swap_pair) {
                 debug!(from = %base_mint, to = %candidate.repay_mint, "Skipping — swap pair previously failed");
                 continue;
             }
 
-            let holding = match holdings.holding_of(base_mint) {
+            let holding = match ctx.holdings.holding_of(base_mint) {
                 Some(h) => h,
                 None => continue,
             };
 
-            let base_reserve = data
+            let base_reserve = ctx
+                .data
                 .reserves
                 .iter()
                 .find(|(_, r)| r.liquidity.mint_pubkey == *base_mint);
@@ -1254,30 +1240,31 @@ async fn try_opportunities(
                 .map(|(_, r)| r.liquidity.mint_decimals)
                 .unwrap_or(9);
 
-            let budget_in_base = (budget.min(holding.usd_value) / base_price
+            let budget_in_base = (opts.budget.min(holding.usd_value) / base_price
                 * 10f64.powi(base_decimals as i32)) as u64;
             let swap_amount = budget_in_base.min(holding.balance);
 
             info!(from = %base_mint, to = %candidate.repay_mint, swap_amount, "Swapping");
 
             match kswap::get_swap_quote(
-                &bot.http,
+                &ctx.bot.http,
                 base_mint,
                 &candidate.repay_mint,
                 swap_amount,
-                &bot.owner,
+                &ctx.bot.owner,
                 consts::DEFAULT_SWAP_SLIPPAGE_BPS,
             )
             .await
             {
                 Ok(quote) => {
                     info!(expected_out = quote.expected_amount_out, "Swap quote");
-                    match kswap::send_swap_transaction(&bot.rpc, &bot.signer, &quote).await {
+                    match kswap::send_swap_transaction(&ctx.bot.rpc, &ctx.bot.signer, &quote).await
+                    {
                         Ok(sig) => {
                             info!(signature = %sig, "Swap successful");
                             wait_for_token_balance(
-                                &bot.rpc,
-                                &bot.owner,
+                                &ctx.bot.rpc,
+                                &ctx.bot.owner,
                                 &candidate.repay_mint,
                                 &repay_reserve.liquidity.token_program,
                             )
@@ -1297,14 +1284,21 @@ async fn try_opportunities(
             }
         }
 
-        match execute_liquidation(bot, &attempt, luts, token_program_cache, priority_fee, send)
-            .await
+        match execute_liquidation(
+            ctx.bot,
+            &attempt,
+            ctx.luts,
+            ctx.token_program_cache,
+            opts.priority_fee,
+            opts.send,
+        )
+        .await
         {
             Ok(Some(sig)) => {
                 info!(signature = %sig, "Liquidation executed");
                 return Ok(true);
             }
-            Ok(None) if !send => {
+            Ok(None) if !opts.send => {
                 info!(
                     rank = rank + 1,
                     profit = format!("${:.4}", candidate.estimated_profit_usd),

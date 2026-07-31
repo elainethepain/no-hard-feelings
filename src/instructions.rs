@@ -157,41 +157,38 @@ fn obligation_farm_user_state(farm_state: &Pubkey, obligation: &Pubkey) -> Pubke
 ///
 /// Batches all farm user state existence checks into a single
 /// `get_multiple_accounts` call instead of sequential per-PDA fetches.
-#[allow(clippy::too_many_arguments)]
 pub async fn build_farm_ixs(
     rpc: &RpcClient,
     payer: &Pubkey,
     obligation_pk: &Pubkey,
     obligation_owner: &Pubkey,
-    collateral_reserve_pk: &Pubkey,
-    collateral_reserve: &Reserve,
-    debt_reserve_pk: &Pubkey,
-    debt_reserve: &Reserve,
+    collateral: &crate::model::ReserveWithKey<'_>,
+    debt: &crate::model::ReserveWithKey<'_>,
 ) -> (Vec<Instruction>, Vec<Instruction>) {
     let mut pre_ixs = Vec::new();
     let mut post_ixs = Vec::new();
 
-    let lending_market = collateral_reserve.lending_market;
+    let lending_market = collateral.reserve.lending_market;
     let (lma, _) = pda::lending_market_authority(&KLEND_PROGRAM_ID, &lending_market);
 
     // Collect all (reserve, farm_state, mode) combinations with active farms.
     let farm_entries: Vec<(Pubkey, Pubkey, u8)> = [
         (
-            *collateral_reserve_pk,
-            collateral_reserve.farm_collateral,
+            collateral.pubkey,
+            collateral.reserve.farm_collateral,
             FARM_MODE_COLLATERAL,
         ),
         (
-            *collateral_reserve_pk,
-            collateral_reserve.farm_debt,
+            collateral.pubkey,
+            collateral.reserve.farm_debt,
             FARM_MODE_DEBT,
         ),
         (
-            *debt_reserve_pk,
-            debt_reserve.farm_collateral,
+            debt.pubkey,
+            debt.reserve.farm_collateral,
             FARM_MODE_COLLATERAL,
         ),
-        (*debt_reserve_pk, debt_reserve.farm_debt, FARM_MODE_DEBT),
+        (debt.pubkey, debt.reserve.farm_debt, FARM_MODE_DEBT),
     ]
     .into_iter()
     .filter(|(_, farm_state, _)| *farm_state != Pubkey::default())
@@ -286,11 +283,11 @@ impl FarmAccounts {
     /// the liquidation instruction itself needs.
     pub fn from_reserves(
         obligation_pk: &Pubkey,
-        collateral_reserve: &Reserve,
-        debt_reserve: &Reserve,
+        collateral: &crate::model::ReserveWithKey<'_>,
+        debt: &crate::model::ReserveWithKey<'_>,
     ) -> Self {
-        let coll_farm = collateral_reserve.farm_collateral;
-        let debt_farm = debt_reserve.farm_debt;
+        let coll_farm = collateral.reserve.farm_collateral;
+        let debt_farm = debt.reserve.farm_debt;
 
         Self {
             collateral_reserve_farm_state: maybe_null_pk(coll_farm),
